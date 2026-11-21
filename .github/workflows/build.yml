@@ -1,0 +1,118 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          mkdir -p work
+          ZIP=$(find . -maxdepth 2 -name "*.zip" | head -1)
+          echo "ZIP = $ZIP"
+          unzip -o -q "$ZIP" -d work
+          ROOT=$(find work -path "*/app/src/main/AndroidManifest.xml" | head -1 | sed 's|/app/src/main/AndroidManifest.xml||')
+          if [ -z "$ROOT" ]; then
+            echo "找不到项目根目录，zip 内容如下："
+            find work -maxdepth 4
+            exit 1
+          fi
+          echo "ROOT=$ROOT" >> $GITHUB_ENV
+          echo "项目根目录 = $ROOT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Normalize config
+        run: |
+          cd "$ROOT"
+          rm -rf app/src/main/aidl app/src/main/res .gradle build app/build
+          find . -name "*.kt" -delete
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+          repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+          repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+          repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "A11y"
+          include ':app'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.7.3' apply false }
+          EOF
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx3072m -Dfile.encoding=UTF-8
+          android.useAndroidX=false
+          EOF
+          mkdir -p app
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+          namespace 'com.ripple.a11y'
+          compileSdk 35
+          defaultConfig {
+          applicationId "com.ripple.a11y"
+          minSdk 26
+          targetSdk 35
+          versionCode 1
+          versionName "1.0"
+          }
+          compileOptions {
+          sourceCompatibility JavaVersion.VERSION_17
+          targetCompatibility JavaVersion.VERSION_17
+          }
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+          <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+          <application
+          android:label="无障碍管家"
+          android:icon="@android:drawable/sym_def_app_icon"
+          android:theme="@android:style/Theme.Material.NoActionBar"
+          android:allowBackup="true">
+          <activity
+          android:name=".MainActivity"
+          android:exported="true"
+          android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
+          <intent-filter>
+          <action android:name="android.intent.action.MAIN" />
+          <category android:name="android.intent.category.LAUNCHER" />
+          </intent-filter>
+          </activity>
+          </application>
+          </manifest>
+          EOF
+          echo "=== 最终文件 ==="
+          find app/src -type f
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build
+        run: |
+          cd "$ROOT"
+          gradle assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a11y-apk
+          path: ${{ env.ROOT }}/app/build/outputs/apk/debug/*.apk
