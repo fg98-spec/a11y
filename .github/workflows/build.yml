@@ -19,7 +19,7 @@ jobs:
           unzip -o -q "$ZIP" -d work
           ROOT=$(find work -path "*/app/src/main/AndroidManifest.xml" | head -1 | sed 's|/app/src/main/AndroidManifest.xml||')
           if [ -z "$ROOT" ]; then
-            echo "找不到项目根目录，zip 内容如下："
+            echo "找不到项目根目录"
             find work -maxdepth 4
             exit 1
           fi
@@ -31,16 +31,33 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
-      - name: Install SDK 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Android SDK
+        run: |
+          echo "ANDROID_HOME = $ANDROID_HOME"
+          SDKM=$(command -v sdkmanager || find "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -1)
+          echo "sdkmanager = $SDKM"
+          if [ -n "$SDKM" ]; then
+            yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+            "$SDKM" "platforms;android-35" "build-tools;35.0.0" || true
+          fi
+          echo "SDK 就绪"
 
       - name: Normalize config
         run: |
           cd "$ROOT"
           rm -rf app/src/main/aidl app/src/main/res .gradle build app/build
           find . -name "*.kt" -delete
+          if [ ! -f app/src/main/java/com/ripple/a11y/MainActivity.java ]; then
+            echo "❌ 缺少 MainActivity.java"
+            echo "当前源文件："
+            find app/src -type f
+            exit 1
+          fi
+          if [ ! -f app/src/main/assets/index.html ]; then
+            echo "❌ 缺少 index.html"
+            find app/src -type f
+            exit 1
+          fi
           cat > settings.gradle <<'EOF'
           pluginManagement {
           repositories { google(); mavenCentral(); gradlePluginPortal() }
@@ -100,7 +117,7 @@ jobs:
           </application>
           </manifest>
           EOF
-          echo "=== 最终文件 ==="
+          echo "=== 最终源文件 ==="
           find app/src -type f
 
       - uses: gradle/actions/setup-gradle@v4
