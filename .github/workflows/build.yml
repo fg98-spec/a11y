@@ -15,7 +15,6 @@ jobs:
         run: |
           mkdir -p work
           ZIP=$(find . -maxdepth 2 -name "*.zip" | head -1)
-          echo "ZIP = $ZIP"
           unzip -o -q "$ZIP" -d work
           ROOT=$(find work -path "*/app/src/main/AndroidManifest.xml" | head -1 | sed 's|/app/src/main/AndroidManifest.xml||')
           if [ -z "$ROOT" ]; then
@@ -24,7 +23,7 @@ jobs:
             exit 1
           fi
           echo "ROOT=$ROOT" >> $GITHUB_ENV
-          echo "项目根目录 = $ROOT"
+          echo "根目录 = $ROOT"
 
       - uses: actions/setup-java@v4
         with:
@@ -33,31 +32,36 @@ jobs:
 
       - name: Android SDK
         run: |
-          echo "ANDROID_HOME = $ANDROID_HOME"
           SDKM=$(command -v sdkmanager || find "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -1)
-          echo "sdkmanager = $SDKM"
           if [ -n "$SDKM" ]; then
             yes | "$SDKM" --licenses > /dev/null 2>&1 || true
             "$SDKM" "platforms;android-35" "build-tools;35.0.0" || true
           fi
           echo "SDK 就绪"
 
-      - name: Normalize config
+      - name: Normalize
         run: |
           cd "$ROOT"
-          rm -rf app/src/main/aidl app/src/main/res .gradle build app/build
-          find . -name "*.kt" -delete
-          if [ ! -f app/src/main/java/com/ripple/a11y/MainActivity.java ]; then
-            echo "❌ 缺少 MainActivity.java"
-            echo "当前源文件："
-            find app/src -type f
-            exit 1
-          fi
-          if [ ! -f app/src/main/assets/index.html ]; then
-            echo "❌ 缺少 index.html"
-            find app/src -type f
-            exit 1
-          fi
+          echo "=== 原始文件 ==="
+          find app/src -type f
+          MJ=$(find . -iname "MainActivity.java" | head -1)
+          HT=$(find . -iname "index.html" | head -1)
+          echo "找到 Java = $MJ"
+          echo "找到 HTML = $HT"
+          if [ -z "$MJ" ]; then echo "❌ zip 里没有 MainActivity.java"; exit 1; fi
+          if [ -z "$HT" ]; then echo "❌ zip 里没有 index.html"; exit 1; fi
+          mkdir -p /tmp/keep
+          cp "$MJ" /tmp/keep/MainActivity.java
+          cp "$HT" /tmp/keep/index.html
+          rm -rf app/src/main/java app/src/main/assets app/src/main/aidl app/src/main/res
+          rm -rf .gradle build app/build
+          mkdir -p app/src/main/java/com/ripple/a11y app/src/main/assets
+          cp /tmp/keep/MainActivity.java app/src/main/java/com/ripple/a11y/MainActivity.java
+          cp /tmp/keep/index.html app/src/main/assets/index.html
+          sed -i 's/^package [^;]*;/package com.ripple.a11y;/' app/src/main/java/com/ripple/a11y/MainActivity.java
+          echo "=== 修正后 ==="
+          find app/src -type f
+          head -3 app/src/main/java/com/ripple/a11y/MainActivity.java
           cat > settings.gradle <<'EOF'
           pluginManagement {
           repositories { google(); mavenCentral(); gradlePluginPortal() }
@@ -76,7 +80,6 @@ jobs:
           org.gradle.jvmargs=-Xmx3072m -Dfile.encoding=UTF-8
           android.useAndroidX=false
           EOF
-          mkdir -p app
           cat > app/build.gradle <<'EOF'
           plugins { id 'com.android.application' }
           android {
@@ -117,8 +120,6 @@ jobs:
           </application>
           </manifest>
           EOF
-          echo "=== 最终源文件 ==="
-          find app/src -type f
 
       - uses: gradle/actions/setup-gradle@v4
         with:
