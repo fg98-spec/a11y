@@ -128,7 +128,14 @@ jobs:
       - name: Build
         run: |
           cd "$ROOT"
-          gradle assembleDebug --no-daemon --stacktrace
+          set +e
+          gradle assembleDebug --no-daemon --console=plain > build.log 2>&1
+          CODE=$?
+          echo "########## 编译错误 ##########"
+          grep -n -E "error:|错误:|\.java:[0-9]+|What went wrong|Execution failed" build.log | head -40
+          echo "########## 日志尾部 ##########"
+          tail -40 build.log
+          exit $CODE
 
       - uses: actions/upload-artifact@v4
         with:
