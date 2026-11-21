@@ -132,7 +132,7 @@ jobs:
           gradle assembleDebug --no-daemon --console=plain > build.log 2>&1
           CODE=$?
           echo "########## 编译错误 ##########"
-          grep -n -E "error:|错误:|\.java:[0-9]+|What went wrong|Execution failed" build.log | head -40
+          grep -n -A 3 -E "error:|错误:" build.log | head -60
           echo "########## 日志尾部 ##########"
           tail -40 build.log
           exit $CODE
