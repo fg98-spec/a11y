@@ -1,129 +1,50 @@
-# .github/workflows/build.yml
-name: Build APK
+name: 幕间 · GitHub 云构建
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Check sources
+      - name: Smoke check
         run: |
-          echo "=== 仓库文件 ==="
-          find . -path ./.git -prune -o -type f -print
-          test -f app/src/main/java/com/ripple/cine/MainActivity.java || { echo "缺少 MainActivity.java"; exit 1; }
-          test -f app/src/main/assets/index.html || { echo "缺少 index.html"; exit 1; }
-          echo "源文件齐全"
+          test -f index.html && test -f sw.js && test -f manifest.webmanifest
+          node -e "const s=require('fs').readFileSync('index.html','utf8');if(!s.includes('</html>'))throw new Error('incomplete');console.log('static ok')"
 
-      - uses: actions/setup-java@v4
+      - name: Write build info
+        run: |
+          printf '{"sha":"%s","run":"%s","builtAt":"%s"}\n' "${GITHUB_SHA:0:7}" "$GITHUB_RUN_NUMBER" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > version.json
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          distribution: temurin
-          java-version: '17'
+          path: .
 
-      - name: Android SDK
-        run: |
-          SDKM=$(command -v sdkmanager || find "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -1)
-          if [ -n "$SDKM" ]; then
-            yes | "$SDKM" --licenses > /dev/null 2>&1 || true
-            "$SDKM" "platforms;android-35" "build-tools;35.0.0" || true
-          fi
-          echo "SDK 就绪"
-
-      - name: Generate config
-        run: |
-          rm -rf app/src/main/aidl app/src/main/res
-          find . -name "*.kt" -not -path "./.git/*" -delete
-          cat > settings.gradle <<'EOF'
-          pluginManagement {
-          repositories { google(); mavenCentral(); gradlePluginPortal() }
-          }
-          dependencyResolutionManagement {
-          repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-          repositories { google(); mavenCentral() }
-          }
-          rootProject.name = "MuGuang"
-          include ':app'
-          EOF
-          cat > build.gradle <<'EOF'
-          plugins { id 'com.android.application' version '8.7.3' apply false }
-          EOF
-          cat > gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx3072m -Dfile.encoding=UTF-8
-          android.useAndroidX=false
-          EOF
-          mkdir -p app
-          cat > app/build.gradle <<'EOF'
-          plugins { id 'com.android.application' }
-          android {
-          namespace 'com.ripple.cine'
-          compileSdk 35
-          defaultConfig {
-          applicationId "com.ripple.cine"
-          minSdk 26
-          targetSdk 35
-          versionCode 1
-          versionName "1.0"
-          }
-          compileOptions {
-          sourceCompatibility JavaVersion.VERSION_17
-          targetCompatibility JavaVersion.VERSION_17
-          }
-          }
-          EOF
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-          <uses-permission android:name="android.permission.INTERNET" />
-          <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-          <queries>
-          <package android:name="com.tencent.qqlive" />
-          <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>
-          </queries>
-          <application
-          android:label="幕光"
-          android:icon="@android:drawable/ic_media_play"
-          android:theme="@android:style/Theme.Material.NoActionBar"
-          android:usesCleartextTraffic="false"
-          android:allowBackup="true">
-          <activity
-          android:name=".MainActivity"
-          android:exported="true"
-          android:configChanges="orientation|screenSize|keyboardHidden|uiMode|screenLayout|smallestScreenSize">
-          <intent-filter>
-          <action android:name="android.intent.action.MAIN" />
-          <category android:name="android.intent.category.LAUNCHER" />
-          </intent-filter>
-          </activity>
-          <activity
-          android:name=".MainActivity$ScreenActivity"
-          android:exported="false"
-          android:configChanges="orientation|screenSize|keyboardHidden|uiMode|screenLayout|smallestScreenSize" />
-          </application>
-          </manifest>
-          EOF
-          find app/src -type f
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Build
-        run: |
-          set +e
-          gradle assembleDebug --no-daemon --console=plain > build.log 2>&1
-          C=$?
-          echo "########## 编译错误 ##########"
-          grep -n -A 3 -E "error:|错误:|What went wrong|Execution failed" build.log | head -60
-          echo "########## 日志尾部 ##########"
-          tail -30 build.log
-          exit $C
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: muguang-apk
-          path: app/build/outputs/apk/debug/*.apk
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
