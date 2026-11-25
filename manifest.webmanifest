@@ -1,0 +1,16 @@
+{
+  "name": "幕间 · 免费观影导航",
+  "short_name": "幕间",
+  "description": "免费开源的观影导航应用，片库直达腾讯视频官方，GitHub Actions 云构建部署。",
+  "lang": "zh-CN",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#07090F",
+  "theme_color": "#0C101C",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
